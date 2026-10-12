@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="vi">
+<title>Ôn tập tối ưu ngữ cảnh LLM</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="100 câu trắc nghiệm kiến thức nền để đọc văn liệu tối ưu ngữ cảnh, chưng cất kinh nghiệm và đánh giá LLM. Giải thích hiện ngay khi chọn đáp án.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;1,400&family=Lexend:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Tối ưu ngữ cảnh · Chưng cất kinh nghiệm · Đánh giá LLM</div>
+      <h1 id="examTitle">Ôn tập kiến thức nền</h1>
+      <p class="sub" id="examDesc"></p>
+    </div>
+    <div class="stats" aria-live="polite">
+      <div class="stat"><b id="sDone">0</b><span id="sTotal">ĐÃ LÀM / 100</span></div>
+      <div class="stat ok"><b id="sOk">0</b><span>ĐÚNG</span></div>
+      <div class="stat bad"><b id="sBad">0</b><span>SAI</span></div>
+    </div>
+  </header>
+
+  <nav class="exams" aria-label="Chọn nhóm chủ đề"><span class="exam-group" id="exams"></span></nav>
+
+  <div class="layout">
+    <main class="card" id="card">
+      <div class="qhead"><div class="qnum" id="qnum"></div><div class="time" id="gname"></div></div>
+      <div class="qtext" id="qtext"></div>
+      <div class="opts" id="opts"></div>
+      <div class="verdict" id="verdict" hidden></div>
+      <div class="nav">
+        <button class="btn" id="prev" type="button">← Câu trước</button>
+        <button class="btn primary" id="next" type="button">Câu tiếp →</button>
+      </div>
+      <div class="hint">Phím tắt: <kbd>A</kbd>–<kbd>D</kbd> hoặc <kbd>1</kbd>–<kbd>4</kbd> để chọn, <kbd>←</kbd> <kbd>→</kbd> để chuyển câu.</div>
+    </main>
+
+    <aside class="sheet">
+      <h2>Phiếu trả lời</h2>
+      <p class="sub">Bấm vào số câu để chuyển nhanh.</p>
+      <div class="grid" id="grid"></div>
+      <div class="legend"><span><i></i>Chưa làm</span><span><i class="lok"></i>Đúng</span><span><i class="lbad"></i>Sai</span></div>
+      <div class="tools">
+        <label><input type="checkbox" id="onlyWrong"> Chỉ duyệt các câu làm sai</label>
+        <button class="btn" id="reset" type="button">Làm lại từ đầu</button>
+        <div class="confirm" id="confirm" hidden>
+          Xoá toàn bộ câu trả lời đã chọn?
+          <div><button class="btn primary" id="yes" type="button">Xoá</button><button class="btn" id="no" type="button">Huỷ</button></div>
+        </div>
+      </div>
+      <p class="note">Tài liệu tự ôn tập, không phải nguồn tham khảo học thuật. Các con số trong phần giải thích là ví dụ minh hoạ cho khái niệm — hãy đọc bản gốc trước khi trích dẫn bất cứ điều gì. Tiến độ lưu trong trình duyệt này.</p>
+    </aside>
+  </div>
+</div>
+
+<script src="data/questions.js"></script>
+<script>
+(function () {
+  var DATA = window.QUIZ, ALL = DATA.questions, L = 'ABCD';
+  var KEY = 'ctxquiz-answers', CURKEY = 'ctxquiz-cur', GKEY = 'ctxquiz-group';
+  var GROUPS = [{ key: '', label: 'Tất cả', n: ALL.length }].concat(DATA.groups);
+  var GL = {}; DATA.groups.forEach(function (g) { GL[g.key] = g.label; });
+  var gkey = '', Q = [], picks = {}, cur = 0;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var onlyWrong = $('onlyWrong'), grid = $('grid');
+
+  GROUPS.forEach(function (g) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'exam'; b.dataset.key = g.key;
+    b.innerHTML = g.label + '<span class="gcount">' + g.n + '</span>';
+    b.addEventListener('click', function () { location.hash = g.key || 'all'; });
+    $('exams').appendChild(b);
+  });
+
+  try { picks = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { picks = {}; }
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(picks));
+      localStorage.setItem(CURKEY, String(Q[cur] ? Q[cur].id : 1));
+      localStorage.setItem(GKEY, gkey);
+    } catch (e) {}
+  }
+
+  function loadGroup(k, keepId) {
+    if (k === 'all') k = '';
+    if (k && !GL[k]) k = '';
+    gkey = k;
+    Q = k ? ALL.filter(function (q) { return q.g === k; }) : ALL.slice();
+    cur = 0;
+    if (keepId) {
+      var at = Q.map(function (q) { return q.id; }).indexOf(keepId);
+      if (at !== -1) cur = at;
+    }
+    $('examDesc').textContent = Q.length + ' câu · ' + DATA.desc;
+    $('sTotal').textContent = 'ĐÃ LÀM / ' + Q.length;
+    Array.prototype.forEach.call($('exams').children, function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.key === gkey));
+    });
+    var want = gkey || 'all';
+    if (location.hash.slice(1) !== want) history.replaceState(null, '', '#' + want);
+    onlyWrong.checked = false;
+    $('confirm').hidden = true;
+    grid.innerHTML = '';
+    Q.forEach(function (q, i) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'cell'; b.textContent = q.id;
+      b.setAttribute('aria-label', 'Câu ' + q.id);
+      b.addEventListener('click', function () { go(i); });
+      grid.appendChild(b);
+    });
+    render();
+  }
+
+  function state(i) {
+    var q = Q[i], p = picks[q.id];
+    if (p === undefined) return '';
+    return p === q.answer ? 'ok' : 'bad';
+  }
+  function isWrong(i) { return state(i) === 'bad'; }
+  function order() {
+    var all = Q.map(function (_, i) { return i; });
+    return onlyWrong.checked ? all.filter(isWrong) : all;
+  }
+
+  function renderSheet() {
+    var ok = 0, bad = 0;
+    Array.prototype.forEach.call(grid.children, function (b, i) {
+      var st = state(i);
+      b.className = 'cell' + (st ? ' ' + st : '') + (i === cur ? ' cur' : '') +
+        (onlyWrong.checked && !isWrong(i) ? ' hide' : '');
+      if (st === 'ok') ok++; else if (st) bad++;
+    });
+    $('sDone').textContent = ok + bad;
+    $('sOk').textContent = ok;
+    $('sBad').textContent = bad;
+  }
+
+  function render() {
+    var q = Q[cur];
+    if (!q) { $('qtext').textContent = 'Không có câu nào trong nhóm này.'; return; }
+    var pick = picks[q.id], done = pick !== undefined;
+    $('qnum').innerHTML = 'Câu ' + q.id + '<small>/ ' + ALL.length + '</small>';
+    $('gname').textContent = GL[q.g] || '';
+    $('qtext').innerHTML = q.q;
+    var opts = $('opts');
+    opts.innerHTML = '';
+    q.options.forEach(function (o, k) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'opt';
+      if (done) {
+        b.disabled = true;
+        if (k === q.answer) b.classList.add('correct');
+        else if (k === pick) b.classList.add('wrong');
+        else b.classList.add('dim');
+      } else {
+        b.addEventListener('click', function () { choose(k); });
+      }
+      b.innerHTML = '<span class="bubble">' + L[k] + '</span><span class="body">' + o + '</span>';
+      opts.appendChild(b);
+    });
+    var v = $('verdict');
+    if (done) {
+      var right = pick === q.answer;
+      v.className = 'verdict ' + (right ? 'ok' : 'bad');
+      v.innerHTML = '<h3>' + (right ? '✓ Chính xác' : '✗ Chưa đúng, bạn chọn ' + L[pick]) + '</h3>' +
+        '<p><span class="ans">Đáp án đúng: ' + L[q.answer] + '.</span> ' + q.explain + '</p>';
+      v.hidden = false;
+    } else {
+      v.hidden = true;
+    }
+    var list = order(), pos = list.indexOf(cur);
+    $('prev').disabled = pos === -1
+      ? !list.some(function (i) { return i < cur; })
+      : pos <= 0;
+    $('next').disabled = pos === -1
+      ? !list.some(function (i) { return i > cur; })
+      : pos >= list.length - 1;
+    renderSheet();
+  }
+
+  function step(d) {
+    var list = order();
+    if (!list.length) return;
+    var pos = list.indexOf(cur), target;
+    if (pos === -1) {
+      target = d > 0
+        ? list.filter(function (i) { return i > cur; })[0]
+        : list.filter(function (i) { return i < cur; }).pop();
+    } else {
+      target = list[pos + d];
+    }
+    if (target !== undefined) go(target);
+  }
+  function go(i) {
+    cur = i; save(); render();
+    var card = $('card');
+    if (card.getBoundingClientRect().top < 0) card.scrollIntoView({ block: 'start' });
+  }
+  function choose(k) {
+    var q = Q[cur];
+    if (picks[q.id] !== undefined || k >= q.options.length) return;
+    picks[q.id] = k; save(); render();
+    $('verdict').scrollIntoView({
+      block: 'nearest',
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+    });
+  }
+
+  $('prev').addEventListener('click', function () { step(-1); });
+  $('next').addEventListener('click', function () { step(1); });
+  onlyWrong.addEventListener('change', function () {
+    if (onlyWrong.checked && !isWrong(cur)) { var l = order(); if (l.length) cur = l[0]; }
+    render();
+  });
+  $('reset').addEventListener('click', function () { $('confirm').hidden = false; });
+  $('no').addEventListener('click', function () { $('confirm').hidden = true; });
+  $('yes').addEventListener('click', function () {
+    picks = {}; cur = 0; onlyWrong.checked = false; save();
+    $('confirm').hidden = true; render();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    var k = e.key.toUpperCase(), idx = L.indexOf(k);
+    if (idx === -1 && '1234'.indexOf(k) !== -1) idx = '1234'.indexOf(k);
+    if (idx !== -1 && k.length === 1) { choose(idx); e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
+  });
+
+  var startG = location.hash.slice(1), keep = 0;
+  if (!startG) { try { startG = localStorage.getItem(GKEY) || ''; } catch (e) { startG = ''; } }
+  try { keep = parseInt(localStorage.getItem(CURKEY), 10) || 0; } catch (e) {}
+  loadGroup(startG, keep);
+  window.addEventListener('hashchange', function () {
+    var k = location.hash.slice(1); if (k === 'all') k = '';
+    if (k !== gkey) loadGroup(k, Q[cur] ? Q[cur].id : 0);
+  });
+})();
+</script>
+</html>
